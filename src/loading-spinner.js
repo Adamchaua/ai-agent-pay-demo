@@ -7,6 +7,7 @@ function createLoadingState() {
     isLoading: false,
     error: null,
     bounties: [],
+    requestId: 0,
   };
 }
 
@@ -15,20 +16,41 @@ async function loadBounties(fetchBounties, state = createLoadingState()) {
     throw new TypeError('fetchBounties must be a function');
   }
 
+  const requestId = state.requestId + 1;
+  state.requestId = requestId;
   state.isLoading = true;
   state.error = null;
 
   try {
     const bounties = await fetchBounties();
+    if (state.requestId !== requestId) {
+      return state;
+    }
     state.bounties = Array.isArray(bounties) ? bounties : [];
     return state;
   } catch (error) {
-    state.bounties = [];
-    state.error = error && error.message ? error.message : DEFAULT_ERROR_MESSAGE;
+    if (state.requestId !== requestId) {
+      return state;
+    }
+    state.error = toUserSafeError(error);
     return state;
   } finally {
-    state.isLoading = false;
+    if (state.requestId === requestId) {
+      state.isLoading = false;
+    }
   }
+}
+
+async function updateBountyList(container, fetchBounties, state = createLoadingState()) {
+  if (!container || typeof container !== 'object') {
+    throw new TypeError('container must be a DOM element-like object');
+  }
+
+  const pending = loadBounties(fetchBounties, state);
+  container.innerHTML = renderBountyList(state);
+  await pending;
+  container.innerHTML = renderBountyList(state);
+  return state;
 }
 
 function renderBountyList(state) {
@@ -51,6 +73,13 @@ function renderBountyList(state) {
   return `<ul class="bounty-list">${items}</ul>`;
 }
 
+function toUserSafeError(error) {
+  if (error && error.userMessage) {
+    return String(error.userMessage);
+  }
+  return DEFAULT_ERROR_MESSAGE;
+}
+
 function escapeHtml(value) {
   return value.replace(/[&<>'"]/g, (char) => ({
     '&': '&amp;',
@@ -66,4 +95,5 @@ module.exports = {
   createLoadingState,
   loadBounties,
   renderBountyList,
+  updateBountyList,
 };
